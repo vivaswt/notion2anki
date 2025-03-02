@@ -1,0 +1,43 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.37.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           notion2anki
+version:        0.1.0.0
+category:       Web
+homepage:       https://github.com/githubuser/notion2anki#readme
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2025 Author name here
+license:        BSD-3-Clause
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+executable notion2anki
+  main-is: Main.hs
+  other-modules:
+      Anki
+      NotionFlashCard
+      Paths_notion2anki
+  autogen-modules:
+      Paths_notion2anki
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      aeson
+    , aeson-qq
+    , base >=4.7 && <5
+    , bytestring
+    , http-conduit
+    , safe-exceptions
+    , scalpel
+    , text
+    , transformers
+    , vector
+  default-language: Haskell2010
