@@ -26,13 +26,14 @@
 
 1. Set the `PRIVATE_NOTION_TOKEN` environment variable with your Notion integration token:
     
-```sh    export PRIVATE_NOTION_TOKEN="your-notion-token"
-    ```
+```sh
+    export PRIVATE_NOTION_TOKEN="your-notion-token"
+```
 
 2. Run the application:
-    ```sh
+```sh
     stack exec notion2anki
-    ```
+```
 
 ## Configuration
 
