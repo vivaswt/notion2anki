@@ -25,6 +25,7 @@ import Network.HTTP.Simple
     setRequestHeader,
     setRequestMethod,
   )
+import Network.URI (parseURI, uriPath)
 import qualified NotionFlashCard as NFC
 
 data AnkiAddNoteResult
@@ -114,7 +115,15 @@ picutreRequestBody :: NFC.FlashCard -> Value
 picutreRequestBody flashCard =
   Array vs
   where
-    vs = V.fromList $ map (\(NFC.Image u) -> fileBody "picture" "WordImage" u) blocks
+    vs =
+      V.fromList $
+        map
+          ( \(NFC.Image u) -> fileBody (fileName u) "WordImage" u
+          )
+          blocks
+
+    fileName =
+      T.pack . fromMaybe "unknown_image" . getFileNameFromURL . T.unpack
 
     blocks = filter predicate $ NFC.flashCardBlockChildren flashCard
 
@@ -134,7 +143,12 @@ audioRequestBody :: NFC.FlashCard -> Value
 audioRequestBody flashCard =
   Array vs
   where
-    vs = V.fromList $ map (\(NFC.Audio u) -> fileBody "audio" "PronounceSentence" u) blocks
+    vs =
+      V.fromList $
+        map (\(NFC.Audio u) -> fileBody (fileName u) "PronounceSentence" u) blocks
+
+    fileName =
+      T.pack . fromMaybe "unknown_audio" . getFileNameFromURL . T.unpack
 
     blocks = filter predicate $ NFC.flashCardBlockChildren flashCard
 
@@ -175,3 +189,13 @@ editQuestion answer =
     . T.replace "(…)" replacement
   where
     replacement = "<b>" <> answer <> "</b>"
+
+-- | Extract the file name from an HTTP URL.
+-- Returns Nothing if the URL cannot be parsed.
+getFileNameFromURL :: String -> Maybe String
+getFileNameFromURL url = do
+  uri <- parseURI url
+  let path = uriPath uri
+      -- Reverse the path, take characters until the first '/'
+      filename = reverse $ takeWhile (/= '/') $ reverse path
+  return filename

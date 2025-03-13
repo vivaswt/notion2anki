@@ -33,9 +33,9 @@ executable notion2anki
       aeson
     , aeson-qq
     , base >=4.7 && <5
-    , base64-bytestring
     , bytestring
     , http-conduit
+    , network-uri
     , safe-exceptions
     , scalpel
     , text

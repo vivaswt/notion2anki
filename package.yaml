@@ -23,6 +23,7 @@ dependencies:
   - vector
   - safe-exceptions
   - aeson-qq
+  - network-uri
 
 ghc-options:
   - -Wall
