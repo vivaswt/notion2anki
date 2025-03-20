@@ -36,9 +36,11 @@
     export GOOGLE_TTS_API_KEY="your-google-tts-api-key"
     ```
 
-3. Run the application:
+3. Run the application with the appropriate environment argument (`l` for local or `d` for docker). If you ommit the argument, it will be considered as local.
     ```sh
-    stack exec notion2anki
+    stack exec notion2anki l
+    # or
+    stack exec notion2anki d
     ```
 
 ## Configuration
