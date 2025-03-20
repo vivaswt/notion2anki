@@ -9,6 +9,7 @@ import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified NotionFlashCard as NFC
+import System.Environment (getArgs)
 import System.IO (hSetEncoding, stdout, utf8)
 
 main :: IO ()
@@ -21,11 +22,12 @@ main = do
 
 addCards :: ExceptT T.Text IO [(NFC.FlashCard, ANK.AnkiAddNoteResult)]
 addCards = do
+  env <- parseArgs
   flashCards <- NFC.getFlashCardsFromNotion
   when (null flashCards) $
     throwE "No flash cards to regist from Notion found"
   confirmToContinue flashCards
-  zip flashCards <$> ANK.addNoteOfFlashCards flashCards
+  zip flashCards <$> ANK.addNoteOfFlashCards env flashCards
 
 showAddNoteReuslt :: [(NFC.FlashCard, ANK.AnkiAddNoteResult)] -> IO ()
 showAddNoteReuslt resultPairs = do
@@ -46,3 +48,14 @@ confirmToContinue flashCards = do
     throwE "Cancelled to regist flash cards"
   where
     cardsText = T.intercalate ", " $ map NFC.flashCardAnswer flashCards
+
+parseArgs :: ExceptT T.Text IO ANK.AnkiRunningEnvironment
+parseArgs = do
+  args <- liftIO getArgs
+  case args of
+    [] -> do
+      liftIO . TIO.putStrLn $ "runnning as local..."
+      return ANK.Local
+    ["d"] -> return ANK.Docker
+    ["l"] -> return ANK.Local
+    _ -> throwE "Invalid arguments"

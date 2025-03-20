@@ -5,6 +5,7 @@ module Anki
   ( addNoteOfFlashCard,
     addNoteOfFlashCards,
     AnkiAddNoteResult (..),
+    AnkiRunningEnvironment (..),
   )
 where
 
@@ -49,6 +50,9 @@ instance FromJSON AnkiStoreMediaFileResult where
 
 type MediaFileName = T.Text
 
+data AnkiRunningEnvironment = Local | Docker
+  deriving (Show, Eq)
+
 parseAnkiAddNoteResult :: Value -> Parser AnkiAddNoteResult
 parseAnkiAddNoteResult = withObject "AnkiAddNoteResult" $ \o -> do
   e <- o .:? "error" :: Parser (Maybe T.Text)
@@ -63,18 +67,18 @@ parseAnkiStoreMediaFileResult = withObject "AnkiStoreMediaFileResult" $ \o -> do
     Nothing -> AnkiStoreMediaFileResultSuccess <$> o .: "result"
     Just err -> return $ AnkiStoreMediaFileResultFailure err
 
-addNoteOfFlashCards :: [NFC.FlashCard] -> ExceptT T.Text IO [AnkiAddNoteResult]
-addNoteOfFlashCards = mapM addNoteOfFlashCard
+addNoteOfFlashCards :: AnkiRunningEnvironment -> [NFC.FlashCard] -> ExceptT T.Text IO [AnkiAddNoteResult]
+addNoteOfFlashCards = mapM . addNoteOfFlashCard
 
-addNoteOfFlashCard :: NFC.FlashCard -> ExceptT T.Text IO AnkiAddNoteResult
-addNoteOfFlashCard flashCard = do
+addNoteOfFlashCard :: AnkiRunningEnvironment -> NFC.FlashCard -> ExceptT T.Text IO AnkiAddNoteResult
+addNoteOfFlashCard env flashCard = do
   reqBody <- addNoteRequestBody flashCard
 
   let request =
         setRequestHeader "Content-Type" ["application/json"]
           . setRequestBodyJSON reqBody
           . setRequestMethod "POST"
-          $ parseRequest_ "http://host.docker.internal:8765"
+          $ parseRequest_ requestURL
 
   response <- catch (httpLBS request) $
     \(SomeException e) ->
@@ -84,6 +88,10 @@ addNoteOfFlashCard flashCard = do
     . eitherDecode
     . getResponseBody
     $ response
+  where
+    requestURL = case env of
+      Local -> "http://localhost:8765"
+      Docker -> "http://host.docker.internal:8765"
 
 eitherString2EitherTText :: Either String a -> ExceptT T.Text IO a
 eitherString2EitherTText = ExceptT . return . first T.pack
