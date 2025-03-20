@@ -14,9 +14,12 @@ import Data.Aeson (FromJSON, Value (..), eitherDecode, withObject, (.:), (.:?))
 import Data.Aeson.QQ (aesonQQ)
 import Data.Aeson.Types (FromJSON (parseJSON), Parser)
 import Data.Bifunctor (Bifunctor (first))
+import qualified Data.ByteString.Char8 as BC
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
 import qualified Data.Vector as V
+import qualified GoogleAPI as GAPI
 import Network.HTTP.Simple
   ( getResponseBody,
     httpLBS,
@@ -65,6 +68,14 @@ addNoteOfFlashCards = mapM addNoteOfFlashCard
 
 addNoteOfFlashCard :: NFC.FlashCard -> ExceptT T.Text IO AnkiAddNoteResult
 addNoteOfFlashCard flashCard = do
+  reqBody <- addNoteRequestBody flashCard
+
+  let request =
+        setRequestHeader "Content-Type" ["application/json"]
+          . setRequestBodyJSON reqBody
+          . setRequestMethod "POST"
+          $ parseRequest_ "http://host.docker.internal:8765"
+
   response <- catch (httpLBS request) $
     \(SomeException e) ->
       throwE $ "Failed to add flash card to Anki :" <> T.pack (show e)
@@ -73,41 +84,37 @@ addNoteOfFlashCard flashCard = do
     . eitherDecode
     . getResponseBody
     $ response
-  where
-    request =
-      setRequestHeader "Content-Type" ["application/json"]
-        . setRequestBodyJSON (addNoteRequestBody flashCard)
-        . setRequestMethod "POST"
-        $ parseRequest_ "http://host.docker.internal:8765"
 
 eitherString2EitherTText :: Either String a -> ExceptT T.Text IO a
 eitherString2EitherTText = ExceptT . return . first T.pack
 
-addNoteRequestBody :: NFC.FlashCard -> Value
-addNoteRequestBody flashCard =
-  [aesonQQ| {
-    "action": "addNote",
-    "version": 6,
-    "params": {
-        "note": {
-            "deckName": "英単語",
-            "modelName": "Basic",
-            "fields": {
-                "Front": #{NFC.flashCardAnswer flashCard'},
-                "Meaning": #{NFC.flashCardSense flashCard'},
-                "ExampleSentence": #{NFC.flashCardQuestion flashCard'},
-                "IPA": #{NFC.flashCardIPA flashCard'},
-                "OtherIPA": #{NFC.flashCardOtherIPA flashCard'},
-                "MnemonicText": #{NFC.flashCardMnemonic flashCard'}
-            },
-            "picture" : #{picutreRequestBody flashCard},
-            "audio" : #{audioRequestBody flashCard},
-            "options": {
-                "allowDuplicate": false
-            }
-        }
-    }
-  }|]
+addNoteRequestBody :: NFC.FlashCard -> ExceptT T.Text IO Value
+addNoteRequestBody flashCard = do
+  audioReq <- audioRequestBody flashCard'
+  return
+    [aesonQQ| {
+      "action": "addNote",
+      "version": 6,
+      "params": {
+          "note": {
+              "deckName": "英単語",
+              "modelName": "Basic",
+              "fields": {
+                  "Front": #{NFC.flashCardAnswer flashCard'},
+                  "Meaning": #{NFC.flashCardSense flashCard'},
+                  "ExampleSentence": #{NFC.flashCardQuestion flashCard'},
+                  "IPA": #{NFC.flashCardIPA flashCard'},
+                  "OtherIPA": #{NFC.flashCardOtherIPA flashCard'},
+                  "MnemonicText": #{NFC.flashCardMnemonic flashCard'}
+              },
+              "picture" : #{picutreRequestBody flashCard},
+              "audio" : #{audioReq},
+              "options": {
+                  "allowDuplicate": false
+              }
+          }
+      }
+    }|]
   where
     flashCard' = arrangeFlashCard flashCard
 
@@ -139,14 +146,30 @@ picutreRequestBody flashCard =
       fields : [#{field}]
     } |]
 
-audioRequestBody :: NFC.FlashCard -> Value
-audioRequestBody flashCard =
-  Array vs
-  where
-    vs =
-      V.fromList $
-        map (\(NFC.Audio u) -> fileBody (fileName u) "PronounceSentence" u) blocks
+audioRequestBody :: NFC.FlashCard -> ExceptT T.Text IO Value
+audioRequestBody flashCard = do
+  wordReq <- audioPronounceWordRequest flashCard
+  reqChild <- audioPronounceSentenceRequestFromChildBlock flashCard
+  reqTTS <- audioPronounceSentenceRequestFromTTS flashCard
+  return . Array . V.fromList $ wordReq : (if null reqChild then [reqTTS] else reqChild)
 
+audioPronounceWordRequest :: NFC.FlashCard -> ExceptT T.Text IO Value
+audioPronounceWordRequest flashCard = do
+  content <- GAPI.synthesizeFromText $ NFC.flashCardAnswer flashCard
+  return $ dataBody content
+  where
+    dataBody :: BC.ByteString -> Value
+    dataBody content =
+      [aesonQQ| {
+        data : #{TE.decodeUtf8 content},
+        filename : "pronounce_word.mp3",
+        fields : ["PronounceWord"]
+      } |]
+
+audioPronounceSentenceRequestFromChildBlock :: NFC.FlashCard -> ExceptT T.Text IO [Value]
+audioPronounceSentenceRequestFromChildBlock flashCard = do
+  return $ map (\(NFC.Audio u) -> fileBody (fileName u) "PronounceSentence" u) blocks
+  where
     fileName =
       T.pack . fromMaybe "unknown_audio" . getFileNameFromURL . T.unpack
 
@@ -164,6 +187,27 @@ audioRequestBody flashCard =
       fields : [#{field}]
     } |]
 
+audioPronounceSentenceRequestFromTTS :: NFC.FlashCard -> ExceptT T.Text IO Value
+audioPronounceSentenceRequestFromTTS flashCard = do
+  content <-
+    GAPI.synthesizeFromText
+      . questionText
+      . NFC.flashCardQuestion
+      $ flashCard
+
+  return $ dataBody content
+  where
+    dataBody :: BC.ByteString -> Value
+    dataBody content =
+      [aesonQQ| {
+        data : #{TE.decodeUtf8 content},
+        filename : "pronounce_sentence.mp3",
+        fields : ["PronounceSentence"]
+      } |]
+
+-- | Rearrange the flash card to fit the Anki note format.
+-- The answer is placed in the question field and the question is edited.
+-- Content inside parentheses is extracted and placed in the answer field.
 arrangeFlashCard :: NFC.FlashCard -> NFC.FlashCard
 arrangeFlashCard card =
   card
@@ -189,6 +233,9 @@ editQuestion answer =
     . T.replace "(…)" replacement
   where
     replacement = "<b>" <> answer <> "</b>"
+
+questionText :: T.Text -> T.Text
+questionText = T.replace "<b>" "" . T.replace "</b>" ""
 
 -- | Extract the file name from an HTTP URL.
 -- Returns Nothing if the URL cannot be parsed.

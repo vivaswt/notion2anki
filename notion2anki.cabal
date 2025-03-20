@@ -22,6 +22,7 @@ executable notion2anki
   main-is: Main.hs
   other-modules:
       Anki
+      GoogleAPI
       NotionFlashCard
       Paths_notion2anki
   autogen-modules:

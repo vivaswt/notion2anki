@@ -26,14 +26,20 @@
 
 1. Set the `PRIVATE_NOTION_TOKEN` environment variable with your Notion integration token:
     
-```sh
+    ```sh
     export PRIVATE_NOTION_TOKEN="your-notion-token"
-```
+    ```
 
-2. Run the application:
-```sh
+2. Set the `GOOGLE_TTS_API_KEY` environment variable with your Google Text-to-Speech API key:
+    
+    ```sh
+    export GOOGLE_TTS_API_KEY="your-google-tts-api-key"
+    ```
+
+3. Run the application:
+    ```sh
     stack exec notion2anki
-```
+    ```
 
 ## Configuration
 
@@ -51,4 +57,4 @@ Contributions are welcome! Please open an issue or submit a pull request on GitH
 
 ## License
 
-This project is licensed under the BSD-3-Clause License. See the  file for details.
+This project is licensed under the BSD-3-Clause License. See the LICENSE file for details.
