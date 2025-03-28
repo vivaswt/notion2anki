@@ -10,6 +10,7 @@ module Anki
 where
 
 import Control.Exception.Safe (SomeException (SomeException), catch)
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (ExceptT (ExceptT), throwE)
 import Data.Aeson (FromJSON, Value (..), eitherDecode, withObject, (.:), (.:?))
 import Data.Aeson.QQ (aesonQQ)
@@ -31,6 +32,10 @@ import Network.HTTP.Simple
   )
 import Network.URI (parseURI, uriPath)
 import qualified NotionFlashCard as NFC
+import System.Random
+  ( getStdRandom,
+    randomR,
+  )
 
 data AnkiAddNoteResult
   = AnkiAddNoteResultSuccess Int
@@ -156,14 +161,21 @@ picutreRequestBody flashCard =
 
 audioRequestBody :: NFC.FlashCard -> ExceptT T.Text IO Value
 audioRequestBody flashCard = do
-  wordReq <- audioPronounceWordRequest flashCard
-  reqChild <- audioPronounceSentenceRequestFromChildBlock flashCard
-  reqTTS <- audioPronounceSentenceRequestFromTTS flashCard
-  return . Array . V.fromList $ wordReq : (if null reqChild then [reqTTS] else reqChild)
+  -- ToDo : Decide a voice from the list of voices randomly,
+  --        and use the voice for the audio synthesis both for the word and the sentence.
+  voices <- GAPI.voices <$> GAPI.getVoiceList
+  voice <- liftIO . randomItemInList . filter isChirp3 $ voices
 
-audioPronounceWordRequest :: NFC.FlashCard -> ExceptT T.Text IO Value
-audioPronounceWordRequest flashCard = do
-  content <- GAPI.synthesizeFromText $ NFC.flashCardAnswer flashCard
+  wordReq <- audioPronounceWordRequest flashCard voice
+  reqChild <- audioPronounceSentenceRequestFromChildBlock flashCard
+  reqTTS <- audioPronounceSentenceRequestFromTTS flashCard voice
+  return . Array . V.fromList $ wordReq : (if null reqChild then [reqTTS] else reqChild)
+  where
+    isChirp3 = T.isInfixOf "Chirp3" . GAPI.voiceName
+
+audioPronounceWordRequest :: NFC.FlashCard -> GAPI.Voice -> ExceptT T.Text IO Value
+audioPronounceWordRequest flashCard voice = do
+  content <- GAPI.synthesizeFromText (NFC.flashCardAnswer flashCard) voice
   return $ dataBody content
   where
     dataBody :: BC.ByteString -> Value
@@ -195,16 +207,13 @@ audioPronounceSentenceRequestFromChildBlock flashCard = do
       fields : [#{field}]
     } |]
 
-audioPronounceSentenceRequestFromTTS :: NFC.FlashCard -> ExceptT T.Text IO Value
-audioPronounceSentenceRequestFromTTS flashCard = do
+audioPronounceSentenceRequestFromTTS :: NFC.FlashCard -> GAPI.Voice -> ExceptT T.Text IO Value
+audioPronounceSentenceRequestFromTTS flashCard voice = do
   content <-
-    GAPI.synthesizeFromText
-      . questionText
-      . NFC.flashCardQuestion
-      $ flashCard
-
+    GAPI.synthesizeFromText txt voice
   return $ dataBody content
   where
+    txt = questionText . NFC.flashCardQuestion $ flashCard
     dataBody :: BC.ByteString -> Value
     dataBody content =
       [aesonQQ| {
@@ -254,3 +263,9 @@ getFileNameFromURL url = do
       -- Reverse the path, take characters until the first '/'
       filename = reverse $ takeWhile (/= '/') $ reverse path
   return filename
+
+randomItemInList :: [a] -> IO a
+randomItemInList [] = error "Empty list"
+randomItemInList xs = do
+  index <- getStdRandom (randomR (0, length xs - 1))
+  return $ xs !! index

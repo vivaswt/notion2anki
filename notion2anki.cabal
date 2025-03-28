@@ -37,6 +37,7 @@ executable notion2anki
     , bytestring
     , http-conduit
     , network-uri
+    , random
     , safe-exceptions
     , scalpel
     , text

@@ -1,7 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
-module GoogleAPI (synthesizeFromText) where
+module GoogleAPI
+  ( synthesizeFromText,
+    getVoiceList,
+    VoicesListResponse (..),
+    Voice (..),
+  )
+where
 
 import Control.Exception.Safe (SomeException (SomeException), catch)
 import Control.Monad.IO.Class (MonadIO (liftIO))
@@ -21,6 +27,7 @@ import Network.HTTP.Simple
     setRequestBodyJSON,
     setRequestHeader,
     setRequestMethod,
+    setRequestQueryString,
   )
 import System.Environment (lookupEnv)
 
@@ -33,6 +40,28 @@ instance FromJSON SynthesizeResponse where
     content <- BC.pack . T.unpack <$> (o .: "audioContent" :: Parser T.Text)
     return $ SynthesizeResponse content
 
+data Voice = Voice
+  { voiceName :: T.Text,
+    voiceGender :: T.Text
+  }
+  deriving (Show)
+
+instance FromJSON Voice where
+  parseJSON = withObject "Voice" $ \o -> do
+    n <- o .: "name"
+    g <- o .: "ssmlGender"
+    return $ Voice n g
+
+newtype VoicesListResponse = VoicesListResponse
+  { voices :: [Voice]
+  }
+  deriving (Show)
+
+instance FromJSON VoicesListResponse where
+  parseJSON = withObject "VoicesListResponse" $ \o -> do
+    vs <- o .: "voices"
+    return $ VoicesListResponse vs
+
 getBearerToken :: ExceptT T.Text IO B.ByteString
 getBearerToken = do
   token <- liftIO $ lookupEnv "GOOGLE_TTS_API_KEY"
@@ -40,8 +69,8 @@ getBearerToken = do
     Just t -> return . BC.pack $ t
     Nothing -> throwE "GOOGLE_TTS_API_KEY is not set"
 
-synthesizeFromText :: T.Text -> ExceptT T.Text IO BC.ByteString
-synthesizeFromText text = do
+synthesizeFromText :: T.Text -> Voice -> ExceptT T.Text IO BC.ByteString
+synthesizeFromText text voice = do
   token <- getBearerToken
   response <- catch (httpBS . request $ token) $
     \(SomeException e) -> throwE $ "Failed to synthesize text : " <> T.pack (show e)
@@ -73,9 +102,37 @@ synthesizeFromText text = do
           "text": #{text}
         },
         "voice": {
-          "languageCode": "en-US"
+          "languageCode": "en-US",
+          "name": #{voiceName voice},
+          "ssmlGender": #{voiceGender voice}
         },
         "audioConfig": {
           "audioEncoding": "MP3"
         }
       }|]
+
+getVoiceList :: ExceptT T.Text IO VoicesListResponse
+getVoiceList = do
+  token <- getBearerToken
+  response <- catch (httpBS . request $ token) $
+    \(SomeException e) -> throwE $ "Failed to get voice list : " <> T.pack (show e)
+
+  case getResponseStatusCode response of
+    200 -> do
+      case eitherDecodeStrict (getResponseBody response) of
+        Left e -> throwE $ "Failed to parse response of voice list : " <> T.pack e
+        Right res -> return res
+    code ->
+      throwE $
+        "Failed to get voice list : "
+          <> (T.pack . show $ code)
+          <> " * "
+          <> (T.pack . BC.unpack . getResponseBody $ response)
+  where
+    request t =
+      addRequestHeader "X-goog-api-key" t
+        . addRequestHeader "charset" "UTF-8"
+        . setRequestHeader "Accept" ["application/json"]
+        . setRequestMethod "GET"
+        . setRequestQueryString [("languageCode", Just "en-US")]
+        $ parseRequest_ "https://texttospeech.googleapis.com/v1/voices"

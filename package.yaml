@@ -24,6 +24,7 @@ dependencies:
   - safe-exceptions
   - aeson-qq
   - network-uri
+  - random
 
 ghc-options:
   - -Wall
