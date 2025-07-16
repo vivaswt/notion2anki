@@ -107,7 +107,8 @@ synthesizeFromText text voice = do
           "ssmlGender": #{voiceGender voice}
         },
         "audioConfig": {
-          "audioEncoding": "MP3"
+          "audioEncoding": "MP3",
+          "volumeGainDb" : 2.0
         }
       }|]
 
