@@ -33,7 +33,8 @@ import Network.HTTP.Simple
 import Network.URI (parseURI, uriPath)
 import qualified NotionFlashCard as NFC
 import System.Random
-  ( getStdRandom,
+  ( Random (random),
+    getStdRandom,
     randomR,
   )
 
@@ -164,13 +165,15 @@ audioRequestBody flashCard = do
   -- ToDo : Decide a voice from the list of voices randomly,
   --        and use the voice for the audio synthesis both for the word and the sentence.
   voices <- GAPI.voices <$> GAPI.getVoiceList
+  voiceForWord <- liftIO . randomItemInList . filter isStandard $ voices
   voice <- liftIO . randomItemInList . filter isChirp3 $ voices
 
-  wordReq <- audioPronounceWordRequest flashCard voice
+  wordReq <- audioPronounceWordRequest flashCard voiceForWord
   reqChild <- audioPronounceSentenceRequestFromChildBlock flashCard
   reqTTS <- audioPronounceSentenceRequestFromTTS flashCard voice
   return . Array . V.fromList $ wordReq : (if null reqChild then [reqTTS] else reqChild)
   where
+    isStandard = T.isInfixOf "Standard" . GAPI.voiceName
     isChirp3 = T.isInfixOf "Chirp3" . GAPI.voiceName
 
 audioPronounceWordRequest :: NFC.FlashCard -> GAPI.Voice -> ExceptT T.Text IO Value
